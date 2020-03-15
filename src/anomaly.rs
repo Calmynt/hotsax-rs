@@ -1,9 +1,23 @@
 use num::Float;
-use std::ops::AddAssign;
+use std::ops::{AddAssign, Deref, Index, RangeBounds};
 use super::trie::AugmentedTrie;
 use std::collections::{HashMap, HashSet};
 use super::util::{znorm, gaussian};
 use rand::seq::SliceRandom;
+use std::slice::SliceIndex;
+use std::ops::Bound::*;
+
+struct _Index(usize, usize);
+
+fn _index_from_range(bounds: impl RangeBounds<usize>, len: usize) -> _Index {
+    let startbound = bounds.start_bound();
+    let endbound = bounds.end_bound();
+    let x = if let Included(x) = startbound {*x} else {0};
+    let y = if let Excluded(x) = endbound {*x}
+    else if let Included(x) = endbound {x+1}
+    else {len};
+    _Index(x,y)
+}
 
 /// Provides easy access to the HOT SAX and brute force algorithms, by using the builder pattern.
 /// The only necessary algorithmic parameter is the size of the discord itself. The rest have
@@ -17,6 +31,7 @@ pub struct Keogh<'a, N: Float> {
     sax_word_length: usize,
     alpha: usize,
     use_brute_force: bool,
+    index: _Index,
 }
 
 impl<'a, N: Float> Keogh<'a, N> {
@@ -29,6 +44,7 @@ impl<'a, N: Float> Keogh<'a, N> {
             sax_word_length: 3,
             alpha: 3,
             use_brute_force: false,
+            index: _index_from_range(.., data.len())
         }
     }
 
@@ -41,6 +57,12 @@ impl<'a, N: Float> Keogh<'a, N> {
     /// Sets the length of the SAX words to use.
     pub fn sax_word_length(&mut self, n: usize) -> &mut Self {
         self.sax_word_length = n;
+        self
+    }
+
+    /// Specifies to only use a slice of the dataset.
+    pub fn use_slice(&mut self, range: impl RangeBounds<usize>) -> &mut Self {
+        self.index = _index_from_range(range, self.data.len());
         self
     }
 
@@ -59,41 +81,49 @@ impl<'a, N: Float> Keogh<'a, N> {
 
     /// Finds the largest discord. If one couldn't be found, this function returns a `None` instead.
     pub fn find_largest_discord(&self) -> Option<(f64, usize)> {
-        if self.use_brute_force {
+        let use_subslice = self.data.get(self.index.0..self.index.1).unwrap();
+
+        let discord = if self.use_brute_force {
             KeoghInternal::brute_force_best(
-                self.data,
+                &use_subslice,
                 self.discord_size
             )
         }
         else {
             KeoghInternal::get_top_discord(
-                self.data,
+                &use_subslice,
                 self.discord_size,
                 self.sax_word_length,
                 self.alpha
             )
-        }
+        };
+
+        discord.map(|(dist, loc)| (dist, loc+self.index.0))
     }
 
     /// Finds the top `n` largest discords. The vector returned can have *less* than `n` elements
     /// if less than `n` discords could be found.
     pub fn find_n_largest_discords(&self, discord_amnt: usize) -> Vec<(f64, usize)> {
-        if self.use_brute_force {
+        let use_subslice = self.data.get(self.index.0..self.index.1).unwrap();
+
+        let discords = if self.use_brute_force {
             KeoghInternal::brute_force_top_n(
-                self.data,
+                &use_subslice,
                 self.discord_size,
                 discord_amnt
             )
         }
         else {
             KeoghInternal::get_top_n_discords(
-                self.data,
+                &use_subslice,
                 self.discord_size,
                 self.sax_word_length,
                 self.alpha,
                 discord_amnt
             )
-        }
+        };
+
+        discords.into_iter().map(|(dist, loc)| (dist, loc+self.index.0)).collect()
     }
 }
 
@@ -104,11 +134,11 @@ impl KeoghInternal {
     /// Brute force algorithm for finding discords. Made private due to substandard performance.
     ///
     /// Incredibly accurate, but slow to execute. Always takes n^2 time.
-    fn brute_force_internal<N>(
-        data: &Vec<N>,
+    fn brute_force_internal<N, R>(
+        data: &R,
         n: usize,
         skip_over: &[usize]
-    ) -> (f64, usize) where N: Float {
+    ) -> (f64, usize) where N: Float, R: Deref<Target=[N]> {
         let mut best_dist = 0.0;
         let mut best_loc = 0;
 
@@ -131,11 +161,11 @@ impl KeoghInternal {
         (best_dist, best_loc)
     }
 
-    pub fn brute_force_top_n<N>(
-        data: &Vec<N>,
+    pub fn brute_force_top_n<N, R>(
+        data: &R,
         discord_size: usize,
         discord_amnt: usize
-    ) -> Vec<(f64, usize)> where N: Float {
+    ) -> Vec<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
         let mut discords = Vec::new();
         let mut skip_over = Vec::new();
 
@@ -161,7 +191,10 @@ impl KeoghInternal {
     }
 
     #[inline]
-    pub fn brute_force_best<N>(data: &Vec<N>, discord_size: usize) -> Option<(f64, usize)> where N: Float {
+    pub fn brute_force_best<N, R>(
+        data: &R,
+        discord_size: usize
+    ) -> Option<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
         KeoghInternal::brute_force_top_n(data, discord_size, 1).pop()
     }
 
@@ -193,13 +226,13 @@ impl KeoghInternal {
     /// ## Returns
     /// A list of the distances of the top n discords (0), as well as their locations. (1)
     /// This list can have less elements if less discords were found.
-    pub fn get_top_n_discords<N>(
-        data: &Vec<N>,
+    pub fn get_top_n_discords<N, R>(
+        data: &R,
         discord_size: usize,
         sax_word_length: usize,
         alpha: usize,
         discord_amnt: usize
-    ) -> Vec<(f64, usize)> where N: Float {
+    ) -> Vec<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
         let len = data.len();
         let mut words: Vec<String> = Vec::new();
 
@@ -273,12 +306,12 @@ impl KeoghInternal {
     /// The distance of the best discord (0), as well as its location. (1)
     ///
     /// If such a discord isn't found, this function returns `None`.
-    pub fn get_top_discord<N>(
-        data: &Vec<N>,
+    pub fn get_top_discord<N, R>(
+        data: &R,
         discord_size: usize,
         sax_word_length: usize,
         alpha: usize
-    ) -> Option<(f64, usize)> where N: Float {
+    ) -> Option<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
         KeoghInternal::get_top_n_discords(data, discord_size, sax_word_length, alpha,  1).pop()
     }
 
@@ -291,13 +324,13 @@ impl KeoghInternal {
     /// - `discord_size` : The size of the discords to be found.
     /// - `znorm_data` : The data.
     /// - `skip_over` : A list of indexes to skip over.
-    fn hot_sax_internal<N>(
+    fn hot_sax_internal<N, R>(
         sorted_word_table: &Vec<(usize, (&String, usize))>,
         word_trie: &AugmentedTrie,
         discord_size: usize,
-        data: &Vec<N>,
+        data: &R,
         skip_over: &[usize]
-    ) -> (f64, usize) where N: Float {
+    ) -> (f64, usize) where N: Float, R: Deref<Target=[N]> {
         // The actual discord discovery.
         let mut best_dist = 0.0;
         let mut best_loc = 0;

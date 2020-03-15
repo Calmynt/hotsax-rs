@@ -38,9 +38,10 @@
 //! // It uses the same settings: a discord size of 128 and a=3.
 //! // word_size was assumed to be 3.
 //! let discord_size = 256;
-//! let discord = hotsax::Keogh::with(&data[1000..].into(), discord_size)
+//! let discord = hotsax::Keogh::with(&data, discord_size)
+//!     .use_slice(1000..)
 //!     .find_largest_discord()
-//!     .unwrap().1 + 1000;
+//!     .unwrap().1;
 //!
 //! // Plot the entire dataset as a blue color.
 //! let trace1 = Scatter::new((1..=data.len()).collect(), data.clone())
