@@ -79,3 +79,16 @@ plot.add_trace(trace2);
 // Shows the plot to verify.
 plot.show();
 ```
+
+## Evaluation
+To show the accuracy of the implementation, the algorithm was run on the same
+dataset as used in the paper itself. Specifically, data from Figure 6 and Figure 7
+(as can be retrieved [here](https://www.cs.ucr.edu/~eamonn/discords/), or from the `data/`
+directory of this repository as `TEK16.CSV` and `TEK17.CSV` respectively.
+
+Below show the results of this algorithm, compared with the figures shown in the paper.
+
+![Figure 6](./imgs/img1-keogh.png)
+![`hotsax` on `TEK16.CSV`](./imgs/img1-ours.png)
+![Figure 7](./imgs/img2-keogh.png)
+![`hotsax` on `TEK17.CSV`](./imgs/img2-ours.png)
