@@ -22,7 +22,7 @@
 //! // Parses the CSV file from the dataset.
 //! let mut rdr = csv::ReaderBuilder::new()
 //!     .trim(csv::Trim::All)
-//!     .from_path("data/TEK16.CSV")?;
+//!     .from_path("data/RESP_FIG9.CSV")?;
 //!
 //! // Deserialize CSV data into a vector of floats.
 //! let mut data : Vec<f64> = Vec::new();
@@ -37,10 +37,10 @@
 //! // Retrieve the largest discord. This should approx. match the one found in the paper.
 //! // It uses the same settings: a discord size of 128 and a=3.
 //! // word_size was assumed to be 3.
-//! let discord_size = 128;
-//! let discord = hotsax::Keogh::with(&data, discord_size)
+//! let discord_size = 256;
+//! let discord = hotsax::Keogh::with(&data[1000..].into(), discord_size)
 //!     .find_largest_discord()
-//!     .unwrap().1;
+//!     .unwrap().1 + 1000;
 //!
 //! // Plot the entire dataset as a blue color.
 //! let trace1 = Scatter::new((1..=data.len()).collect(), data.clone())
