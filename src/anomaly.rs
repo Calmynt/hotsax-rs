@@ -186,7 +186,7 @@ impl KeoghInternal {
                 break discords
             }
 
-            let min = 0.min(discord.1 as isize - discord_size as isize) as usize;
+            let min = 0.max(discord.1 as isize - discord_size as isize) as usize;
 
             skip_over.extend(min..discord.1+discord_size);
         }
@@ -276,7 +276,7 @@ impl KeoghInternal {
                 &trie,
                 discord_size,
                 &znorm,
-                skip_over.as_slice()
+                &skip_over
             );
 
             if discord.0 == 0.0 {
@@ -289,8 +289,7 @@ impl KeoghInternal {
                 break discords
             }
 
-            let min = 0.min(discord.1 as isize - discord_size as isize) as usize;
-
+            let min = 0.max(discord.1 as isize - discord_size as isize) as usize;
             skip_over.extend(min..discord.1+discord_size);
         }
     }
