@@ -287,7 +287,9 @@ impl KeoghInternal {
                 break discords
             }
 
-            skip_over.extend(discord.1-discord_size..discord.1+discord_size);
+            let min = 0.min(discord.1 as isize - discord_size as isize) as usize;
+
+            skip_over.extend(min..discord.1+discord_size);
         }
     }
 
