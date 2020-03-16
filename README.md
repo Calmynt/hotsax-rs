@@ -37,12 +37,10 @@ convert it to float first.
 use std::error::Error;
 use plotly::{Plot, Scatter};
 
-type Entry = f64;
-
 // Parses the CSV file from the dataset.
 let mut rdr = csv::ReaderBuilder::new()
     .trim(csv::Trim::All)
-    .from_path("data/TEK16.CSV")?;
+    .from_path("data/RESP_FIG9.CSV")?;
 
 // Deserialize CSV data into a vector of floats.
 let mut data : Vec<f64> = Vec::new();
@@ -55,12 +53,13 @@ for result in rdr.deserialize() {
 let mut plot = Plot::new();
 
 // Retrieve the largest discord. This should approx. match the one found in the paper.
-// It uses the same settings: a discord size of 128 and a=3.
+// It uses the same settings: a discord size of 256 and a=3.
 // word_size was assumed to be 3.
-let discord_size = 128;
+let discord_size = 256;
 let discord = hotsax::Keogh::with(&data, discord_size)
-    .find_largest_discord()
-    .unwrap().1;
+    .use_slice(1000..)      // Skips the beginning due to an abnormality.
+    .find_largest_discord() // Finds the largest discord in the subslice.
+    .unwrap().1;            // Only gets the location.
 
 // Plot the entire dataset as a blue color.
 let trace1 = Scatter::new((1..=data.len()).collect(), data.clone())
@@ -85,6 +84,8 @@ To show the accuracy of the implementation, the algorithm was run on the same
 dataset as used in the paper itself. Specifically, data from Figure 6 and Figure 7
 (as can be retrieved [here](https://www.cs.ucr.edu/~eamonn/discords/), or from the `data/`
 directory of this repository as `TEK16.CSV` and `TEK17.CSV` respectively.
+
+The algorithm was ran with a word size of 3, an alphabet size of 3, and a discord size of 128.
 
 Below show the results of this algorithm, compared with the figures shown in the paper.
 

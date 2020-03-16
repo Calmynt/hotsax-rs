@@ -1,14 +1,14 @@
 [package]
 name = "hotsax"
 description = "An implementation of the HOTSAX discord discovery algorithm."
-version = "0.1.5"
+version = "0.2.0"
 authors = ["Andrea Jenkins <mctech26@gmail.com>"]
 license = "MPL-2.0"
 keywords = ["analysis", "data", "anomalies", "ai"]
 edition = "2018"
 readme = "README.md"
 categories = ["algorithms"]
-maintenance = { status = "actively-developed" }
+maintenance = { status = "passively-maintained" }
 
 [dependencies]
 num = "0.2.1"

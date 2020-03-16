@@ -16,8 +16,6 @@
 //! use std::error::Error;
 //! use plotly::{Plot, Scatter};
 //!
-//! type Entry = f64;
-//!
 //! # fn main() -> Result<(), Box<dyn Error>> {
 //! // Parses the CSV file from the dataset.
 //! let mut rdr = csv::ReaderBuilder::new()
@@ -27,21 +25,20 @@
 //! // Deserialize CSV data into a vector of floats.
 //! let mut data : Vec<f64> = Vec::new();
 //! for result in rdr.deserialize() {
-//!     let record: Entry = result?;
-//!     data.push(record);
+//!     data.push(result?);
 //! }
 //!
 //! // Prepare a plot
 //! let mut plot = Plot::new();
 //!
 //! // Retrieve the largest discord. This should approx. match the one found in the paper.
-//! // It uses the same settings: a discord size of 128 and a=3.
+//! // It uses the same settings: a discord size of 256 and a=3.
 //! // word_size was assumed to be 3.
 //! let discord_size = 256;
 //! let discord = hotsax::Keogh::with(&data, discord_size)
-//!     .use_slice(1000..)
-//!     .find_largest_discord()
-//!     .unwrap().1;
+//!     .use_slice(1000..)      // Skips the beginning due to an abnormality.
+//!     .find_largest_discord() // Finds the largest discord in the subslice.
+//!     .unwrap().1;            // Only gets the location.
 //!
 //! // Plot the entire dataset as a blue color.
 //! let trace1 = Scatter::new((1..=data.len()).collect(), data.clone())
