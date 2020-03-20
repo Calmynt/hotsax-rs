@@ -20,7 +20,7 @@
 //! // Parses the CSV file from the dataset.
 //! let mut rdr = csv::ReaderBuilder::new()
 //!     .trim(csv::Trim::All)
-//!     .from_path("data/RESP_FIG9.CSV")?;
+//!     .from_path("data/TEK16.CSV")?;
 //!
 //! // Deserialize CSV data into a vector of floats.
 //! let mut data : Vec<f64> = Vec::new();

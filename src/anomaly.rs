@@ -84,13 +84,13 @@ impl<'a, N: Float> Keogh<'a, N> {
         let use_subslice = self.data.get(self.index.0..self.index.1).unwrap();
 
         let discord = if self.use_brute_force {
-            KeoghInternal::brute_force_best(
+            anomaly_internal::brute_force_best(
                 &use_subslice,
                 self.discord_size
             )
         }
         else {
-            KeoghInternal::get_top_discord(
+            anomaly_internal::get_top_discord(
                 &use_subslice,
                 self.discord_size,
                 self.sax_word_length,
@@ -107,14 +107,14 @@ impl<'a, N: Float> Keogh<'a, N> {
         let use_subslice = self.data.get(self.index.0..self.index.1).unwrap();
 
         let discords = if self.use_brute_force {
-            KeoghInternal::brute_force_top_n(
+            anomaly_internal::brute_force_top_n(
                 &use_subslice,
                 self.discord_size,
                 discord_amnt
             )
         }
         else {
-            KeoghInternal::get_top_n_discords(
+            anomaly_internal::get_top_n_discords(
                 &use_subslice,
                 self.discord_size,
                 self.sax_word_length,
@@ -125,41 +125,38 @@ impl<'a, N: Float> Keogh<'a, N> {
 
         discords.into_iter().map(|(dist, loc)| (dist, loc+self.index.0)).collect()
     }
+
+    /// Finds all discords with a measured distance above `min_dist`.
+    pub fn find_discords_min_dist(&self, min_dist: f64) -> Vec<(f64, usize)> {
+        let use_subslice = self.data.get(self.index.0..self.index.1).unwrap();
+
+        let discords = if self.use_brute_force {
+            anomaly_internal::brute_force_min_dist(
+                &use_subslice,
+                self.discord_size,
+                min_dist
+            )
+        }
+        else {
+            anomaly_internal::get_discords_min_dist(
+                &use_subslice,
+                self.discord_size,
+                self.sax_word_length,
+                self.alpha,
+                min_dist
+            )
+        };
+
+        discords.into_iter().map(|(dist, loc)| (dist, loc+self.index.0)).collect()
+    }
 }
 
-/// Separates the internal logic of the algorithm from the public API.
-struct KeoghInternal {}
 
-impl KeoghInternal {
-    /// Brute force algorithm for finding discords. Made private due to substandard performance.
-    ///
-    /// Incredibly accurate, but slow to execute. Always takes n^2 time.
-    fn brute_force_internal<N, R>(
-        data: &R,
-        n: usize,
-        skip_over: &[usize]
-    ) -> (f64, usize) where N: Float, R: Deref<Target=[N]> {
-        let mut best_dist = 0.0;
-        let mut best_loc = 0;
-
-        for i in 0..data.len()-n+1 {
-            if skip_over.contains(&i) { continue }
-            let mut neigh_dist = std::f64::INFINITY;
-            for j in 0..data.len()-n+1 {
-                if (i as isize - j as isize).abs() >= n as isize {
-                    let dist = gaussian(&data[i..i+n-1], &data[j..j+n-1]);
-                    neigh_dist = neigh_dist.min(dist.to_f64().unwrap());
-                }
-            }
-
-            if neigh_dist > best_dist {
-                best_dist = neigh_dist;
-                best_loc = i;
-            }
-        }
-
-        (best_dist, best_loc)
-    }
+// Internal algorithms for anomaly detection. To be called by Keogh.
+mod anomaly_internal {
+    use num::Float;
+    use std::ops::Deref;
+    use crate::anomaly::{keogh_util, keogh_algo};
 
     pub fn brute_force_top_n<N, R>(
         data: &R,
@@ -170,7 +167,7 @@ impl KeoghInternal {
         let mut skip_over = Vec::new();
 
         loop {
-            let discord = KeoghInternal::brute_force_internal(
+            let discord = keogh_algo::brute_force_internal(
                 data,
                 discord_size,
                 &[]
@@ -187,7 +184,32 @@ impl KeoghInternal {
             }
 
             let min = 0.max(discord.1 as isize - discord_size as isize) as usize;
+            skip_over.extend(min..discord.1+discord_size);
+        }
+    }
 
+    pub fn brute_force_min_dist<N, R>(
+        data: &R,
+        discord_size: usize,
+        min_dist: f64,
+    ) -> Vec<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
+        let mut discords = Vec::new();
+        let mut skip_over = Vec::new();
+
+        loop {
+            let discord = keogh_algo::brute_force_internal(
+                data,
+                discord_size,
+                &[]
+            );
+
+            if (discord.0 == 0.0) | (discord.0 < min_dist) {
+                break discords
+            }
+
+            discords.push(discord);
+
+            let min = 0.max(discord.1 as isize - discord_size as isize) as usize;
             skip_over.extend(min..discord.1+discord_size);
         }
     }
@@ -197,24 +219,7 @@ impl KeoghInternal {
         data: &R,
         discord_size: usize
     ) -> Option<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
-        KeoghInternal::brute_force_top_n(data, discord_size, 1).pop()
-    }
-
-    fn attach_freq_sax_words(words: &Vec<String>) -> Vec<(&String, usize)> {
-        let mut freqmap: HashMap<&String, usize> = HashMap::new();
-
-        words.iter().for_each(|word| {
-            if freqmap.contains_key(word) {
-                freqmap.get_mut(word).unwrap().add_assign(1);
-            }
-            else {
-                freqmap.insert(word, 1);
-            }
-        });
-
-        words.iter().map(|word| {
-            (word, freqmap[word])
-        }).collect()
+        brute_force_top_n(data, discord_size, 1).pop()
     }
 
     /// The HOT SAX algorithm as proposed by Keogh et al.
@@ -235,43 +240,14 @@ impl KeoghInternal {
         alpha: usize,
         discord_amnt: usize
     ) -> Vec<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
-        let len = data.len();
-        let mut words: Vec<String> = Vec::new();
-
-        let znorm = znorm(data);
-
-        for i in 0..len- discord_size {
-            words.push(super::dim_reduction::sax(&data[i..i+ discord_size].to_vec(), sax_word_length, alpha));
-        }
-
-        let trie = AugmentedTrie::from_words(words.iter().enumerate().collect());
-
-        // Contains (index, (SAXword, frequency))
-        // The former is useful to iterate over the data in an ordered way.
-        // The latter is useful for the magic inner loop.
-        // `word_table`
-        let word_table = KeoghInternal::attach_freq_sax_words(&words)
-            .into_iter()
-            .enumerate()
-            .collect::<Vec<(usize, (&String, usize))>>();
-
-        // Gets the minimum frequency from the word table
-        let min_freq = (word_table.iter().min_by_key(|elem| (elem.1).1).unwrap().1).1;
-
-        // Splits word table into minfreq and the rest.
-        let (mut word_table, mut other) : (_,Vec<_>)  = word_table
-            .into_iter()
-            .partition(|elem| (elem.1).1 == min_freq);
-
-        // Randomly shuffles the rest, then adds them to the word table.
-        other.shuffle(&mut rand::thread_rng());
-        word_table.extend(other);
+        let words = keogh_util::get_sax_words(data, discord_size, sax_word_length, alpha);
+        let (word_table, trie, znorm) = keogh_util::extract_hotsax_items(data, &words);
 
         let mut discords : Vec<(f64, usize)> = Vec::new();
         let mut skip_over = Vec::new();
 
         loop {
-            let discord = KeoghInternal::hot_sax_internal(
+            let discord = keogh_algo::hot_sax_internal(
                 &word_table,
                 &trie,
                 discord_size,
@@ -288,6 +264,39 @@ impl KeoghInternal {
             if discords.len() >= discord_amnt {
                 break discords
             }
+
+            let min = 0.max(discord.1 as isize - discord_size as isize) as usize;
+            skip_over.extend(min..discord.1+discord_size);
+        }
+    }
+
+    pub fn get_discords_min_dist<N, R>(
+        data: &R,
+        discord_size: usize,
+        sax_word_length: usize,
+        alpha: usize,
+        min_dist: f64,
+    ) -> Vec<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
+        let words = keogh_util::get_sax_words(data, discord_size, sax_word_length, alpha);
+        let (word_table, trie, znorm) = keogh_util::extract_hotsax_items(data, &words);
+
+        let mut discords : Vec<(f64, usize)> = Vec::new();
+        let mut skip_over = Vec::new();
+
+        loop {
+            let discord = keogh_algo::hot_sax_internal(
+                &word_table,
+                &trie,
+                discord_size,
+                &znorm,
+                &skip_over
+            );
+
+            if (discord.0 == 0.0) | (discord.0 < min_dist) {
+                break discords
+            }
+
+            discords.push(discord);
 
             let min = 0.max(discord.1 as isize - discord_size as isize) as usize;
             skip_over.extend(min..discord.1+discord_size);
@@ -315,7 +324,47 @@ impl KeoghInternal {
         sax_word_length: usize,
         alpha: usize
     ) -> Option<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
-        KeoghInternal::get_top_n_discords(data, discord_size, sax_word_length, alpha,  1).pop()
+        get_top_n_discords(data, discord_size, sax_word_length, alpha,  1).pop()
+    }
+}
+
+// Implementations of algorithms, with parameters given.
+mod keogh_algo {
+    use crate::trie::AugmentedTrie;
+    use num::Float;
+    use std::ops::Deref;
+    use std::collections::HashSet;
+    use crate::gaussian;
+    use rand::seq::SliceRandom;
+
+    /// Brute force algorithm for finding discords. Made private due to substandard performance.
+    ///
+    /// Incredibly accurate, but slow to execute. Always takes n^2 time.
+    pub fn brute_force_internal<N, R>(
+        data: &R,
+        n: usize,
+        skip_over: &[usize]
+    ) -> (f64, usize) where N: Float, R: Deref<Target=[N]> {
+        let mut best_dist = 0.0;
+        let mut best_loc = 0;
+
+        for i in 0..data.len()-n+1 {
+            if skip_over.contains(&i) { continue }
+            let mut neigh_dist = std::f64::INFINITY;
+            for j in 0..data.len()-n+1 {
+                if (i as isize - j as isize).abs() >= n as isize {
+                    let dist = gaussian(&data[i..i+n-1], &data[j..j+n-1]);
+                    neigh_dist = neigh_dist.min(dist.to_f64().unwrap());
+                }
+            }
+
+            if neigh_dist > best_dist {
+                best_dist = neigh_dist;
+                best_loc = i;
+            }
+        }
+
+        (best_dist, best_loc)
     }
 
     /// An internal function that performs the hot sax discord discovery algorithm.
@@ -327,7 +376,7 @@ impl KeoghInternal {
     /// - `discord_size` : The size of the discords to be found.
     /// - `znorm_data` : The data.
     /// - `skip_over` : A list of indexes to skip over.
-    fn hot_sax_internal<N, R>(
+    pub fn hot_sax_internal<N, R>(
         sorted_word_table: &Vec<(usize, (&String, usize))>,
         word_trie: &AugmentedTrie,
         discord_size: usize,
@@ -389,5 +438,79 @@ impl KeoghInternal {
         }
 
         (best_dist, best_loc)
+    }
+}
+
+// Utilities used by algorithms, for generating certain parameters.
+mod keogh_util {
+    use std::ops::{Deref, AddAssign};
+    use num::Float;
+    use crate::trie::AugmentedTrie;
+    use std::collections::HashMap;
+    use crate::znorm;
+    use rand::seq::SliceRandom;
+
+    pub fn attach_freq_sax_words(words: &Vec<String>) -> Vec<(&String, usize)> {
+        let mut freqmap: HashMap<&String, usize> = HashMap::new();
+
+        words.iter().for_each(|word| {
+            if freqmap.contains_key(word) {
+                freqmap.get_mut(word).unwrap().add_assign(1);
+            }
+            else {
+                freqmap.insert(word, 1);
+            }
+        });
+
+        words.iter().map(|word| {
+            (word, freqmap[word])
+        }).collect()
+    }
+
+    pub fn extract_hotsax_items<'a, N, R>(
+        data: &R,
+        words: &'a Vec<String>
+    ) -> (Vec<(usize, (&'a String, usize))>, AugmentedTrie, Vec<N>) where N: Float, R: Deref<Target=[N]> {
+        let znorm = znorm(data);
+
+        let trie = AugmentedTrie::from_words(words.iter().enumerate().collect());
+
+        // Contains (index, (SAXword, frequency))
+        // The former is useful to iterate over the data in an ordered way.
+        // The latter is useful for the magic inner loop.
+        // `word_table`
+        let word_table = attach_freq_sax_words(&words)
+            .into_iter()
+            .enumerate()
+            .collect::<Vec<(usize, (&String, usize))>>();
+
+        // Gets the minimum frequency from the word table
+        let min_freq = (word_table.iter().min_by_key(|elem| (elem.1).1).unwrap().1).1;
+
+        // Splits word table into minfreq and the rest.
+        let (mut word_table, mut other) : (_,Vec<_>)  = word_table
+            .into_iter()
+            .partition(|elem| (elem.1).1 == min_freq);
+
+        // Randomly shuffles the rest, then adds them to the word table.
+        other.shuffle(&mut rand::thread_rng());
+        word_table.extend(other);
+
+        (word_table, trie, znorm)
+    }
+
+    pub fn get_sax_words<N, R>(
+        data: &R,
+        discord_size: usize,
+        sax_word_length: usize,
+        alpha: usize,
+    ) -> Vec<String> where N: Float, R: Deref<Target=[N]> {
+        let mut words: Vec<String> = Vec::new();
+
+        for i in 0..data.len() - discord_size {
+            words.push(crate::dim_reduction::sax(&data[i..i+ discord_size].to_vec(), sax_word_length, alpha));
+        }
+
+        words
     }
 }
