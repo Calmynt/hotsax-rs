@@ -104,7 +104,8 @@ impl<'a, N: Float> Keogh<'a, N> {
     /// Finds the top `n` largest discords. The vector returned can have *less* than `n` elements
     /// if less than `n` discords could be found.
     pub fn find_n_largest_discords(&self, discord_amnt: usize) -> Vec<(f64, usize)> {
-        let use_subslice = self.data.get(self.index.0..self.index.1).unwrap();
+        let use_subslice = self.data.get(self.index.0..self.index.1)
+            .expect(&format!("Couldn't retrieve subslice ({}..{})", self.index.0, self.index.1));
 
         let discords = if self.use_brute_force {
             anomaly_internal::brute_force_top_n(
@@ -170,7 +171,7 @@ mod anomaly_internal {
             let discord = keogh_algo::brute_force_internal(
                 data,
                 discord_size,
-                &[]
+                &skip_over
             );
 
             if discord.0 == 0.0 {

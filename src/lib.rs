@@ -12,7 +12,7 @@
 //! convert it to float first.
 //!
 //! ## Example of use
-//! ```
+//! ```ignore
 //! use std::error::Error;
 //! use plotly::{Plot, Scatter};
 //!
@@ -77,3 +77,124 @@ pub mod util;
 pub use util::{gaussian, znorm, mean, std_dev};
 
 pub(crate) mod trie;
+
+#[cfg(test)]
+mod test {
+    use std::error::Error;
+    use plotly::{Plot, Scatter, Layout};
+
+    static DISCORD_SIZE: usize = 128;
+    static DISCORD_AMNT: usize = 3;
+    static MIN_DIST: f64 = 2.00;
+
+    #[test]
+    fn multi_discord() -> Result<(), Box<dyn std::error::Error>> {
+        // Initialises the CSV reader.
+        let mut rdr = csv::ReaderBuilder::new()
+            .trim(csv::Trim::All)
+            .from_path("data/TEK16.csv")?;
+
+        // Preparing Y axis...
+        let mut initdata: Vec<f64> = Vec::new();
+
+        // Retrieve all data.
+        for record in rdr.deserialize() {
+            initdata.push(record?);
+        }
+
+        let data = trailing_moving_average(&initdata, 0);
+
+        // Retrieve all discords.
+        let discords = crate::Keogh::with(&data, DISCORD_SIZE)
+            .use_brute_force()
+            .use_slice(4000..)
+            // .find_discords_min_dist(MIN_DIST);
+            .find_n_largest_discords(DISCORD_AMNT);
+
+        println!("{} DISCORDS FOUND!", discords.len());
+
+        let indexes : Vec<_> = (1..=5000).collect();
+
+        // Initialise plot with original data.
+        let mut plot = Plot::new();
+        let temps = Scatter::new(indexes.clone(), data.clone()).name("temps");
+        plot.add_trace(temps);
+
+        // Plots all discords.
+        plot_discords(&mut plot, discords, &indexes, &data);
+        // Attaches a title to the plot.
+        attach_title(&mut plot, "Temperature 2019, Buchan Sydney");
+
+        // Shows the plot.
+        plot.show();
+
+        Ok(())
+    }
+
+    // Plots all discords onto the passed in plot.
+    fn plot_discords(plot: &mut Plot, discords: Vec<(f64, usize)>, x_axis: &Vec<u32>, data: &Vec<f64>) {
+        for i in 0..discords.len() {
+            let discord = discords[i];
+            let loc = discord.1;
+            let dist = discord.0;
+
+            plot.add_trace(
+                Scatter::new(
+                    x_axis[loc..loc+DISCORD_SIZE].into(),
+                    data[loc..loc+DISCORD_SIZE].into()
+                ).name(&format!("Discord #{} ({:.2})", i, dist))
+            );
+        }
+    }
+
+    fn attach_title(plot: &mut Plot, title: &str) {
+        plot.set_layout(
+            Layout::new()
+                .title(plotly::common::Title::new(title))
+        );
+    }
+
+    /// Averages the data using a centered moving average.
+    ///
+    /// Data[i] = Mean(Data[i-n..i+n]);
+    fn centered_moving_average(data: &Vec<f64>, n: usize) -> Vec<f64> {
+        if n == 0 { return data.clone() }
+
+        let mut out = Vec::new();
+        let len = data.len();
+
+        for i in 0..n {
+            out.push(crate::mean(&&data[0..i]));
+        }
+
+        for i in n..len-n {
+            out.push(crate::mean(&&data[i-n..i+n]));
+        }
+
+        for i in len-n..len {
+            out.push(crate::mean(&&data[i-n..i]));
+        }
+
+        out
+    }
+
+    /// Averages the data using a trailing moving average.
+    ///
+    /// Data[i] = Mean(Data[i-n..i]);
+    fn trailing_moving_average(data: &Vec<f64>, n: usize) -> Vec<f64> {
+        if n == 0 { return data.clone() }
+
+        let mut out = Vec::new();
+        let len = data.len();
+
+        for i in 0..n {
+            out.push(crate::mean(&&data[0..i]));
+        }
+
+        for i in n..len {
+            out.push(crate::mean(&&data[i-n..i]));
+        }
+
+        out
+    }
+}
