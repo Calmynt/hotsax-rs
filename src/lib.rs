@@ -1,5 +1,7 @@
 //! This crate contains an implementation of the HOT SAX algorithm, and
 //! the brute force algorithm, as proposed by [Keogh et al.](http://www.cse.cuhk.edu.hk/~adafu/Pub/icdm05time.pdf).
+//! It will also include the [HS-Squeezer](https://dl.acm.org/doi/abs/10.1145/3287921.3287929) algorithm when it is implemented,
+//! since it offers useful optimizations, while still being heavily based on the HOT SAX algorithm.
 //!
 //! During the implementation some other functions had to be made, such as `paa`, `znorm`, and
 //! `gaussian`. These functions are exposed, due to their utility apart from being used in HOT SAX.
@@ -35,7 +37,7 @@
 //! // It uses the same settings: a discord size of 256 and a=3.
 //! // word_size was assumed to be 3.
 //! let discord_size = 256;
-//! let discord = hotsax::Keogh::with(&data, discord_size)
+//! let discord = hotsax::Anomaly::with(&data, discord_size)
 //!     .use_slice(1000..)      // Skips the beginning due to an abnormality.
 //!     .find_largest_discord() // Finds the largest discord in the subslice.
 //!     .unwrap().1;            // Only gets the location.
@@ -64,7 +66,7 @@
 /// HOT SAX algorithms as specified by Keogh's paper, found
 /// [here](http://www.cse.cuhk.edu.hk/~adafu/Pub/icdm05time.pdf).
 pub mod anomaly;
-pub use anomaly::Keogh;
+pub use anomaly::Anomaly;
 
 /// Dimensionality reduction techniques.
 ///
@@ -105,8 +107,9 @@ mod test {
         let data = trailing_moving_average(&initdata, 0);
 
         // Retrieve all discords.
-        let discords = crate::Keogh::with(&data, DISCORD_SIZE)
-            .use_brute_force()
+        let discords = crate::Anomaly::with(&data, DISCORD_SIZE)
+            .use_algo(crate::anomaly::Algorithm::Bruteforce)
+            // .dim_reduce(800)
             .use_slice(4000..)
             // .find_discords_min_dist(MIN_DIST);
             .find_n_largest_discords(DISCORD_AMNT);

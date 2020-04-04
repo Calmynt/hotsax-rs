@@ -6,6 +6,7 @@ use super::util::{znorm, gaussian};
 use rand::seq::SliceRandom;
 use std::slice::SliceIndex;
 use std::ops::Bound::*;
+use crate::paa;
 
 struct _Index(usize, usize);
 
@@ -25,32 +26,46 @@ fn _index_from_range(bounds: impl RangeBounds<usize>, len: usize) -> _Index {
 /// - `sax_word_length` = 3
 /// - `alpha` = 3
 /// - `use_brute_force` = false
-pub struct Keogh<'a, N: Float> {
+pub struct Anomaly<'a, N: Float> {
     data: &'a Vec<N>,
     discord_size: usize,
     sax_word_length: usize,
     alpha: usize,
-    use_brute_force: bool,
+    algo: Algorithm,
+    dim_reduce: usize,
     index: _Index,
 }
 
-impl<'a, N: Float> Keogh<'a, N> {
+pub enum Algorithm {
+    Bruteforce,
+    HOTSAX,
+    Squeezer
+}
+
+impl<'a, N: Float> Anomaly<'a, N> {
 
     /// Sets up the data and the discord size to be used.
+    ///
+    /// By default it uses:
+    /// - `sax_word_length: 3`
+    /// - `alpha: 3`
+    /// - `algo: Algorithm::HOTSAX`
+    /// - `dim_reduce: 0` (disabled)
     pub fn with(data: &'a Vec<N>, discord_size: usize) -> Self {
         Self {
             data,
             discord_size,
             sax_word_length: 3,
             alpha: 3,
-            use_brute_force: false,
+            algo: Algorithm::HOTSAX,
+            dim_reduce: 0,
             index: _index_from_range(.., data.len())
         }
     }
 
-    /// Sets a flag to use the brute force algorithm instead of the HOT SAX one.
-    pub fn use_brute_force(&mut self) -> &mut Self {
-        self.use_brute_force = true;
+    /// Determines the exact algorithm to use.
+    pub fn use_algo(&mut self, algo: Algorithm) -> &mut Self {
+        self.algo = algo;
         self
     }
 
@@ -63,6 +78,13 @@ impl<'a, N: Float> Keogh<'a, N> {
     /// Specifies to only use a slice of the dataset.
     pub fn use_slice(&mut self, range: impl RangeBounds<usize>) -> &mut Self {
         self.index = _index_from_range(range, self.data.len());
+        self
+    }
+
+    /// Applies PAA to the data. This is only useful if run with
+    /// the bruteforce algorithm in mind.
+    pub fn dim_reduce(&mut self, new_len: usize) -> &mut Self {
+        self.dim_reduce = new_len;
         self
     }
 
@@ -83,19 +105,31 @@ impl<'a, N: Float> Keogh<'a, N> {
     pub fn find_largest_discord(&self) -> Option<(f64, usize)> {
         let use_subslice = self.data.get(self.index.0..self.index.1).unwrap();
 
-        let discord = if self.use_brute_force {
-            anomaly_internal::brute_force_best(
-                &use_subslice,
-                self.discord_size
-            )
-        }
-        else {
-            anomaly_internal::get_top_discord(
-                &use_subslice,
-                self.discord_size,
-                self.sax_word_length,
-                self.alpha
-            )
+        let discord = match self.algo {
+            Algorithm::Bruteforce => {
+                if self.dim_reduce > 1 {
+                    anomaly_internal::brute_force_best(
+                        &paa(&use_subslice.to_vec(), self.dim_reduce),
+                        self.discord_size
+                    ).map(|(dist, loc)| (dist, loc*((1000/self.dim_reduce) as usize)))
+                } else {
+                    anomaly_internal::brute_force_best(
+                        &use_subslice,
+                        self.discord_size
+                    )
+                }
+            },
+            Algorithm::HOTSAX => {
+                anomaly_internal::get_top_discord(
+                    &use_subslice,
+                    self.discord_size,
+                    self.sax_word_length,
+                    self.alpha
+                )
+            },
+            Algorithm::Squeezer => {
+                unimplemented!()
+            }
         };
 
         discord.map(|(dist, loc)| (dist, loc+self.index.0))
@@ -107,21 +141,34 @@ impl<'a, N: Float> Keogh<'a, N> {
         let use_subslice = self.data.get(self.index.0..self.index.1)
             .expect(&format!("Couldn't retrieve subslice ({}..{})", self.index.0, self.index.1));
 
-        let discords = if self.use_brute_force {
-            anomaly_internal::brute_force_top_n(
-                &use_subslice,
-                self.discord_size,
-                discord_amnt
-            )
-        }
-        else {
-            anomaly_internal::get_top_n_discords(
-                &use_subslice,
-                self.discord_size,
-                self.sax_word_length,
-                self.alpha,
-                discord_amnt
-            )
+        let discords = match self.algo {
+            Algorithm::Bruteforce => {
+                if self.dim_reduce > 1 {
+                    anomaly_internal::brute_force_top_n(
+                        &paa(&use_subslice.to_vec(), self.dim_reduce),
+                        self.discord_size,
+                        discord_amnt
+                    ).into_iter().map(|(dist, loc)| (dist, loc*((1000/self.dim_reduce) as usize))).collect()
+                } else {
+                    anomaly_internal::brute_force_top_n(
+                        &use_subslice,
+                        self.discord_size,
+                        discord_amnt
+                    )
+                }
+            },
+            Algorithm::HOTSAX => {
+                anomaly_internal::get_top_n_discords(
+                    &use_subslice,
+                    self.discord_size,
+                    self.sax_word_length,
+                    self.alpha,
+                    discord_amnt
+                )
+            },
+            Algorithm::Squeezer => {
+                unimplemented!()
+            }
         };
 
         discords.into_iter().map(|(dist, loc)| (dist, loc+self.index.0)).collect()
@@ -131,21 +178,34 @@ impl<'a, N: Float> Keogh<'a, N> {
     pub fn find_discords_min_dist(&self, min_dist: f64) -> Vec<(f64, usize)> {
         let use_subslice = self.data.get(self.index.0..self.index.1).unwrap();
 
-        let discords = if self.use_brute_force {
-            anomaly_internal::brute_force_min_dist(
-                &use_subslice,
-                self.discord_size,
-                min_dist
-            )
-        }
-        else {
-            anomaly_internal::get_discords_min_dist(
-                &use_subslice,
-                self.discord_size,
-                self.sax_word_length,
-                self.alpha,
-                min_dist
-            )
+        let discords = match self.algo {
+            Algorithm::Bruteforce => {
+                if self.dim_reduce > 1 {
+                    anomaly_internal::brute_force_min_dist(
+                        &paa(&use_subslice.to_vec(), self.dim_reduce),
+                        self.discord_size,
+                        min_dist
+                    ).into_iter().map(|(dist, loc)| (dist, loc*((1000/self.dim_reduce) as usize))).collect()
+                } else {
+                    anomaly_internal::brute_force_min_dist(
+                        &use_subslice,
+                        self.discord_size,
+                        min_dist
+                    )
+                }
+            },
+            Algorithm::HOTSAX => {
+                anomaly_internal::get_discords_min_dist(
+                    &use_subslice,
+                    self.discord_size,
+                    self.sax_word_length,
+                    self.alpha,
+                    min_dist
+                )
+            },
+            Algorithm::Squeezer => {
+                unimplemented!()
+            }
         };
 
         discords.into_iter().map(|(dist, loc)| (dist, loc+self.index.0)).collect()

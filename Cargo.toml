@@ -1,7 +1,7 @@
 [package]
 name = "hotsax"
 description = "An implementation of the HOTSAX discord discovery algorithm."
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Andrea Jenkins <mctech26@gmail.com>"]
 license = "MPL-2.0"
 keywords = ["analysis", "data", "anomalies", "ai"]
