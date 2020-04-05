@@ -39,7 +39,7 @@ pub struct Anomaly<'a, N: Float> {
 pub enum Algorithm {
     Bruteforce,
     HOTSAX,
-    Squeezer
+    Squeezer(f64)
 }
 
 impl<'a, N: Float> Anomaly<'a, N> {
@@ -120,15 +120,21 @@ impl<'a, N: Float> Anomaly<'a, N> {
                 }
             },
             Algorithm::HOTSAX => {
-                anomaly_internal::get_top_discord(
+                anomaly_internal::hotsax_best(
                     &use_subslice,
                     self.discord_size,
                     self.sax_word_length,
                     self.alpha
                 )
             },
-            Algorithm::Squeezer => {
-                unimplemented!()
+            Algorithm::Squeezer(threshold) => {
+                anomaly_internal::hs_squeezer_best(
+                    &use_subslice,
+                    self.discord_size,
+                    self.sax_word_length,
+                    self.alpha,
+                    threshold
+                )
             }
         };
 
@@ -158,7 +164,7 @@ impl<'a, N: Float> Anomaly<'a, N> {
                 }
             },
             Algorithm::HOTSAX => {
-                anomaly_internal::get_top_n_discords(
+                anomaly_internal::hotsax_top_n(
                     &use_subslice,
                     self.discord_size,
                     self.sax_word_length,
@@ -166,8 +172,15 @@ impl<'a, N: Float> Anomaly<'a, N> {
                     discord_amnt
                 )
             },
-            Algorithm::Squeezer => {
-                unimplemented!()
+            Algorithm::Squeezer(threshold) => {
+                anomaly_internal::hs_squeezer_top_n(
+                    &use_subslice,
+                    self.discord_size,
+                    self.sax_word_length,
+                    self.alpha,
+                    threshold,
+                    discord_amnt
+                )
             }
         };
 
@@ -195,7 +208,7 @@ impl<'a, N: Float> Anomaly<'a, N> {
                 }
             },
             Algorithm::HOTSAX => {
-                anomaly_internal::get_discords_min_dist(
+                anomaly_internal::hotsax_min_dist(
                     &use_subslice,
                     self.discord_size,
                     self.sax_word_length,
@@ -203,8 +216,15 @@ impl<'a, N: Float> Anomaly<'a, N> {
                     min_dist
                 )
             },
-            Algorithm::Squeezer => {
-                unimplemented!()
+            Algorithm::Squeezer(threshold) => {
+                anomaly_internal::hs_squeezer_min_dist(
+                    &use_subslice,
+                    self.discord_size,
+                    self.sax_word_length,
+                    self.alpha,
+                    threshold,
+                    min_dist
+                )
             }
         };
 
@@ -217,7 +237,8 @@ impl<'a, N: Float> Anomaly<'a, N> {
 mod anomaly_internal {
     use num::Float;
     use std::ops::Deref;
-    use crate::anomaly::{keogh_util, keogh_algo};
+    use crate::anomaly::{keogh_util, inner_algo};
+    use crate::znorm;
 
     pub fn brute_force_top_n<N, R>(
         data: &R,
@@ -228,7 +249,7 @@ mod anomaly_internal {
         let mut skip_over = Vec::new();
 
         loop {
-            let discord = keogh_algo::brute_force_internal(
+            let discord = inner_algo::brute_force_internal(
                 data,
                 discord_size,
                 &skip_over
@@ -258,7 +279,7 @@ mod anomaly_internal {
         let mut skip_over = Vec::new();
 
         loop {
-            let discord = keogh_algo::brute_force_internal(
+            let discord = inner_algo::brute_force_internal(
                 data,
                 discord_size,
                 &[]
@@ -294,7 +315,7 @@ mod anomaly_internal {
     /// ## Returns
     /// A list of the distances of the top n discords (0), as well as their locations. (1)
     /// This list can have less elements if less discords were found.
-    pub fn get_top_n_discords<N, R>(
+    pub fn hotsax_top_n<N, R>(
         data: &R,
         discord_size: usize,
         sax_word_length: usize,
@@ -308,7 +329,7 @@ mod anomaly_internal {
         let mut skip_over = Vec::new();
 
         loop {
-            let discord = keogh_algo::hot_sax_internal(
+            let discord = inner_algo::hot_sax_internal(
                 &word_table,
                 &trie,
                 discord_size,
@@ -331,7 +352,7 @@ mod anomaly_internal {
         }
     }
 
-    pub fn get_discords_min_dist<N, R>(
+    pub fn hotsax_min_dist<N, R>(
         data: &R,
         discord_size: usize,
         sax_word_length: usize,
@@ -345,7 +366,7 @@ mod anomaly_internal {
         let mut skip_over = Vec::new();
 
         loop {
-            let discord = keogh_algo::hot_sax_internal(
+            let discord = inner_algo::hot_sax_internal(
                 &word_table,
                 &trie,
                 discord_size,
@@ -379,24 +400,144 @@ mod anomaly_internal {
     /// The distance of the best discord (0), as well as its location. (1)
     ///
     /// If such a discord isn't found, this function returns `None`.
-    pub fn get_top_discord<N, R>(
+    pub fn hotsax_best<N, R>(
         data: &R,
         discord_size: usize,
         sax_word_length: usize,
         alpha: usize
     ) -> Option<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
-        get_top_n_discords(data, discord_size, sax_word_length, alpha,  1).pop()
+        hotsax_top_n(data, discord_size, sax_word_length, alpha, 1).pop()
+    }
+
+    /// The HS-Squeezer algorithm.
+    ///
+    /// Should be approximately 4x faster than HOT SAX.
+    ///
+    /// ## Panics
+    /// - `sax_word_length` is larger than `discord size`.
+    /// - `alpha` is under 3 or over 7.
+    ///
+    /// ## Returns
+    /// A list of the distances of the top n discords (0), as well as their locations. (1)
+    /// This list can have less elements if less discords were found.
+    pub fn hs_squeezer_top_n<N, R>(
+        data: &R,
+        discord_size: usize,
+        sax_word_length: usize,
+        alpha: usize,
+        threshold: f64,
+        discord_amnt: usize
+    ) -> Vec<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
+        let words = keogh_util::get_sax_words(data, discord_size, sax_word_length, alpha);
+        let znorm = znorm(data);
+
+        let mut discords : Vec<(f64, usize)> = Vec::new();
+        let mut skip_over = Vec::new();
+
+        loop {
+            let discord = inner_algo::hs_squeezer_internal(
+                &words,
+                discord_size,
+                &znorm,
+                threshold,
+                &skip_over
+            );
+
+            if discord.0 == 0.0 {
+                break discords
+            }
+
+            discords.push(discord);
+
+            if discords.len() >= discord_amnt {
+                break discords
+            }
+
+            let min = 0.max(discord.1 as isize - discord_size as isize) as usize;
+            skip_over.extend(min..discord.1+discord_size);
+        }
+    }
+
+    /// The HS-Squeezer algorithm.
+    ///
+    /// Should be approximately 4x faster than HOT SAX.
+    ///
+    /// ## Panics
+    /// - `sax_word_length` is larger than `discord size`.
+    /// - `alpha` is under 3 or over 7.
+    ///
+    /// ## Returns
+    /// A list of the distances of all discords above the min_dist (0), as well as their locations. (1)
+    /// This list can have less elements if less discords were found.
+    pub fn hs_squeezer_min_dist<N, R>(
+        data: &R,
+        discord_size: usize,
+        sax_word_length: usize,
+        alpha: usize,
+        threshold: f64,
+        min_dist: f64,
+    ) -> Vec<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
+        let words = keogh_util::get_sax_words(data, discord_size, sax_word_length, alpha);
+        let znorm = znorm(data);
+
+        let mut discords : Vec<(f64, usize)> = Vec::new();
+        let mut skip_over = Vec::new();
+
+        loop {
+            let discord = inner_algo::hs_squeezer_internal(
+                &words,
+                discord_size,
+                &znorm,
+                 threshold,
+                &skip_over
+            );
+
+            if (discord.0 == 0.0) | (discord.0 < min_dist) {
+                break discords
+            }
+
+            discords.push(discord);
+
+            let min = 0.max(discord.1 as isize - discord_size as isize) as usize;
+            skip_over.extend(min..discord.1+discord_size);
+        }
+    }
+
+    #[inline]
+    /// The HOT SAX algorithm as proposed by Keogh et al. As suggested by the paper, the alphabet
+    /// size used is hardcoded as `3`.
+    ///
+    /// Accurate, and faster than the brute force algorithm. Takes between `n` and `n^2` time.
+    ///
+    /// A shortcut function to `get_top_n_discords(..., 1)`
+    ///
+    /// ## Panics
+    /// `sax_word_length` is larger than `discord size`.
+    ///
+    /// ## Returns
+    /// The distance of the best discord (0), as well as its location. (1)
+    ///
+    /// If such a discord isn't found, this function returns `None`.
+    pub fn hs_squeezer_best<N, R>(
+        data: &R,
+        discord_size: usize,
+        sax_word_length: usize,
+        alpha: usize,
+        threshold: f64
+    ) -> Option<(f64, usize)> where N: Float, R: Deref<Target=[N]> {
+        hs_squeezer_top_n(data, discord_size, sax_word_length, alpha, threshold, 1).pop()
     }
 }
 
 // Implementations of algorithms, with parameters given.
-mod keogh_algo {
+mod inner_algo {
     use crate::trie::AugmentedTrie;
     use num::Float;
     use std::ops::Deref;
     use std::collections::HashSet;
     use crate::gaussian;
     use rand::seq::SliceRandom;
+    use crate::squeezer::{Cluster, squeezer};
 
     /// Brute force algorithm for finding discords. Made private due to substandard performance.
     ///
@@ -495,6 +636,82 @@ mod keogh_algo {
             if (neigh_dist > best_dist) & (neigh_dist < std::f64::INFINITY) {
                 best_dist = neigh_dist;
                 best_loc = *i;
+            }
+        }
+
+        (best_dist, best_loc)
+    }
+
+    pub fn hs_squeezer_internal<N, R>(
+        words: &Vec<String>,
+        discord_size: usize,
+        data: &R,
+        threshold: f64,
+        skip_over: &[usize]
+    ) -> (f64, usize) where N: Float, R: Deref<Target=[N]> {
+        // The actual discord discovery.
+        let mut best_dist = 0.0;
+        let mut best_loc = 0;
+
+        // Uses squeezer algorithm to get clusters.
+        let clusters = squeezer(&words, threshold);
+
+        let mut indexes = clusters.iter().min_by_key(|cluster| cluster.len()).unwrap().vec();
+        indexes.append(&mut (0..data.len()).collect());
+
+        // Outer loop heuristic: Uses sorted word table.
+        for i in indexes.into_iter() {
+            if skip_over.contains(&i) {
+                continue
+            }
+
+            // Boolean that checks whether to perform the random search
+            let mut do_random_search = true;
+
+            // The neighbouring distance for the inner loop
+            let mut neigh_dist = std::f64::INFINITY;
+
+            // Finds the cluster that the current item is in.
+            let curr_cluster = if let Some(cluster) = clusters
+                .iter()
+                .find(|cluster| cluster.contains(&i)) {
+                cluster
+            } else {
+                continue;
+            };
+
+            // Inner loop heuristic: Checks the occurrences of the same SAX word using the word trie.
+            for &j in curr_cluster.iter() {
+                if (i as isize - j as isize).abs() >= discord_size as isize {
+                    // Retrieves the gaussian distance between to slices
+                    let dist = gaussian(&data[i..i+ discord_size -1], &data[j..j+ discord_size -1]).to_f64().unwrap();
+                    // Updates the neighbouring distance
+                    neigh_dist = neigh_dist.min(dist);
+                    // Stops searching if a distance word than `best_dist` was found
+                    if dist < best_dist { do_random_search = false; break;}
+                }
+            }
+
+            if !do_random_search { continue }
+
+            // Gets all indexes and shuffles them
+            // This includes the occurrences as
+            let mut nums: Vec<usize> = (0..data.len()- discord_size +1).collect();
+            nums.shuffle(&mut rand::thread_rng());
+
+            // Calculates the closest neighbouring distance
+            for j in nums.into_iter() {
+                if (i as isize - j as isize).abs() >= discord_size as isize {
+                    let dist = gaussian(&data[i..i + discord_size - 1], &data[j..j + discord_size - 1]).to_f64().unwrap();
+                    neigh_dist = neigh_dist.min(dist);
+                    if dist < best_dist { break; }
+                }
+            }
+
+            // Updates the best distance if the neighbouring distance is larger.
+            if (neigh_dist > best_dist) & (neigh_dist < std::f64::INFINITY) {
+                best_dist = neigh_dist;
+                best_loc = i;
             }
         }
 

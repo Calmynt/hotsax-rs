@@ -78,6 +78,10 @@ pub use dim_reduction::{paa, sax};
 pub mod util;
 pub use util::{gaussian, znorm, mean, std_dev};
 
+/// Clustering functions and squeezer impl
+pub mod squeezer;
+pub use squeezer::squeezer;
+
 pub(crate) mod trie;
 
 #[cfg(test)]
@@ -86,7 +90,7 @@ mod test {
     use plotly::{Plot, Scatter, Layout};
 
     static DISCORD_SIZE: usize = 128;
-    static DISCORD_AMNT: usize = 3;
+    static DISCORD_AMNT: usize = 1;
     static MIN_DIST: f64 = 2.00;
 
     #[test]
@@ -108,9 +112,10 @@ mod test {
 
         // Retrieve all discords.
         let discords = crate::Anomaly::with(&data, DISCORD_SIZE)
-            .use_algo(crate::anomaly::Algorithm::Bruteforce)
+            .use_algo(crate::anomaly::Algorithm::Squeezer(0.85))
+            .sax_word_length(5)
             // .dim_reduce(800)
-            .use_slice(4000..)
+            // .use_slice(4000..)
             // .find_discords_min_dist(MIN_DIST);
             .find_n_largest_discords(DISCORD_AMNT);
 
