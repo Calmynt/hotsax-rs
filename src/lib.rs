@@ -86,15 +86,15 @@ pub(crate) mod trie;
 
 #[cfg(test)]
 mod test {
-    use std::error::Error;
     use plotly::{Plot, Scatter, Layout};
 
     static DISCORD_SIZE: usize = 128;
-    static DISCORD_AMNT: usize = 1;
+    static DISCORD_AMNT: usize = 5;
     static MIN_DIST: f64 = 2.00;
 
     #[test]
     fn multi_discord() -> Result<(), Box<dyn std::error::Error>> {
+
         // Initialises the CSV reader.
         let mut rdr = csv::ReaderBuilder::new()
             .trim(csv::Trim::All)
@@ -112,8 +112,8 @@ mod test {
 
         // Retrieve all discords.
         let discords = crate::Anomaly::with(&data, DISCORD_SIZE)
-            .use_algo(crate::anomaly::Algorithm::Squeezer(0.85))
-            .sax_word_length(5)
+            // .use_algo(crate::anomaly::Algorithm::Squeezer(0.85))
+            // .sax_word_length(5)
             // .dim_reduce(800)
             // .use_slice(4000..)
             // .find_discords_min_dist(MIN_DIST);

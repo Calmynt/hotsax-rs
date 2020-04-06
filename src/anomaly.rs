@@ -1,10 +1,5 @@
 use num::Float;
-use std::ops::{AddAssign, Deref, Index, RangeBounds};
-use super::trie::AugmentedTrie;
-use std::collections::{HashMap, HashSet};
-use super::util::{znorm, gaussian};
-use rand::seq::SliceRandom;
-use std::slice::SliceIndex;
+use std::ops::RangeBounds;
 use std::ops::Bound::*;
 use crate::paa;
 
@@ -537,7 +532,7 @@ mod inner_algo {
     use std::collections::HashSet;
     use crate::gaussian;
     use rand::seq::SliceRandom;
-    use crate::squeezer::{Cluster, squeezer};
+    use crate::squeezer::squeezer;
 
     /// Brute force algorithm for finding discords. Made private due to substandard performance.
     ///
@@ -654,13 +649,14 @@ mod inner_algo {
         let mut best_loc = 0;
 
         // Uses squeezer algorithm to get clusters.
-        let clusters = squeezer(&words, threshold);
+        let mut clusters = squeezer(&words, threshold);
 
-        let mut indexes = clusters.iter().min_by_key(|cluster| cluster.len()).unwrap().vec();
-        indexes.append(&mut (0..data.len()).collect());
+        let mut indexes = clusters.iter().enumerate().min_by_key(|cluster| cluster.1.len()).unwrap();
+        let mut iter_over = clusters.clone();
+        iter_over.rotate_left(indexes.0);
 
         // Outer loop heuristic: Uses sorted word table.
-        for i in indexes.into_iter() {
+        for i in iter_over.into_iter().flatten() {
             if skip_over.contains(&i) {
                 continue
             }
