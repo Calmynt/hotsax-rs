@@ -650,13 +650,10 @@ mod inner_algo {
 
         // Uses squeezer algorithm to get clusters.
         let mut clusters = squeezer(&words, threshold);
-
-        let mut indexes = clusters.iter().enumerate().min_by_key(|cluster| cluster.1.len()).unwrap();
-        let mut iter_over = clusters.clone();
-        iter_over.rotate_left(indexes.0);
+        clusters.sort_unstable_by_key(|cluster| cluster.len());
 
         // Outer loop heuristic: Uses sorted word table.
-        for i in iter_over.into_iter().flatten() {
+        for &i in clusters.iter().flatten() {
             if skip_over.contains(&i) {
                 continue
             }

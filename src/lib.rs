@@ -81,6 +81,7 @@ pub use util::{gaussian, znorm, mean, std_dev};
 /// Clustering functions and squeezer impl
 pub mod squeezer;
 pub use squeezer::squeezer;
+pub use anomaly::Algorithm;
 
 pub(crate) mod trie;
 
@@ -89,7 +90,7 @@ mod test {
     use plotly::{Plot, Scatter, Layout};
 
     static DISCORD_SIZE: usize = 128;
-    static DISCORD_AMNT: usize = 5;
+    static DISCORD_AMNT: usize = 1;
     static MIN_DIST: f64 = 2.00;
 
     #[test]
@@ -98,21 +99,21 @@ mod test {
         // Initialises the CSV reader.
         let mut rdr = csv::ReaderBuilder::new()
             .trim(csv::Trim::All)
-            .from_path("data/TEK16.csv")?;
+            .from_path("data/TEK17.csv")?;
 
         // Preparing Y axis...
-        let mut initdata: Vec<f64> = Vec::new();
+        let mut data: Vec<f64> = Vec::new();
 
         // Retrieve all data.
         for record in rdr.deserialize() {
-            initdata.push(record?);
+            data.push(record?);
         }
 
-        let data = trailing_moving_average(&initdata, 0);
+        // let data = trailing_moving_average(&data, 0);
 
         // Retrieve all discords.
         let discords = crate::Anomaly::with(&data, DISCORD_SIZE)
-            // .use_algo(crate::anomaly::Algorithm::Squeezer(0.85))
+            .use_algo(crate::Algorithm::Squeezer(0.85))
             // .sax_word_length(5)
             // .dim_reduce(800)
             // .use_slice(4000..)
