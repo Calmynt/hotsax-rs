@@ -21,6 +21,10 @@ An implementation of the HOTSAX discord discovery algorithm.
 
 This crate contains an implementation of the HOT SAX algorithm, and
 the brute force algorithm, as proposed by [Keogh et al.](http://www.cse.cuhk.edu.hk/~adafu/Pub/icdm05time.pdf).
+It also includes the [HS-Squeezer](https://dl.acm.org/doi/abs/10.1145/3287921.3287929) algorithm,
+since it offers useful optimizations, while still being heavily based on the HOT SAX algorithm.
+However, from testing, the performance of this implementation is similar or worse than HOT SAX.
+If you find any possible optimizations, please open an issue.
 
 During the implementation some other functions had to be made, such as `paa`, `znorm`, and
 `gaussian`. These functions are exposed, due to their utility apart from being used in HOT SAX.
@@ -40,13 +44,12 @@ use plotly::{Plot, Scatter};
 // Parses the CSV file from the dataset.
 let mut rdr = csv::ReaderBuilder::new()
     .trim(csv::Trim::All)
-    .from_path("data/RESP_FIG9.CSV")?;
+    .from_path("data/TEK16.CSV")?;
 
 // Deserialize CSV data into a vector of floats.
 let mut data : Vec<f64> = Vec::new();
 for result in rdr.deserialize() {
-    let record: Entry = result?;
-    data.push(record);
+    data.push(result?);
 }
 
 // Prepare a plot
@@ -56,7 +59,7 @@ let mut plot = Plot::new();
 // It uses the same settings: a discord size of 256 and a=3.
 // word_size was assumed to be 3.
 let discord_size = 256;
-let discord = hotsax::Keogh::with(&data, discord_size)
+let discord = hotsax::Anomaly::with(&data, discord_size)
     .use_slice(1000..)      // Skips the beginning due to an abnormality.
     .find_largest_discord() // Finds the largest discord in the subslice.
     .unwrap().1;            // Only gets the location.

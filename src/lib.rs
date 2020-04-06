@@ -1,7 +1,9 @@
 //! This crate contains an implementation of the HOT SAX algorithm, and
 //! the brute force algorithm, as proposed by [Keogh et al.](http://www.cse.cuhk.edu.hk/~adafu/Pub/icdm05time.pdf).
-//! It will also include the [HS-Squeezer](https://dl.acm.org/doi/abs/10.1145/3287921.3287929) algorithm when it is implemented,
+//! It also includes the [HS-Squeezer](https://dl.acm.org/doi/abs/10.1145/3287921.3287929) algorithm,
 //! since it offers useful optimizations, while still being heavily based on the HOT SAX algorithm.
+//! However, from testing, the performance of this implementation is similar or worse than HOT SAX.
+//! If you find any possible optimizations, please open an issue.
 //!
 //! During the implementation some other functions had to be made, such as `paa`, `znorm`, and
 //! `gaussian`. These functions are exposed, due to their utility apart from being used in HOT SAX.
